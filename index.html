@@ -162,6 +162,7 @@
               <option value="korean">한국파렛트 출고</option>
               <option value="general">일반파렛트 출고</option>
               <option value="courier">택배 출고</option>
+              <option value="box">상자 출고</option>
             </select>
           </label>
           <div id="outQtyWrap" class="col-span-2">
@@ -171,11 +172,17 @@
             <label class="text-xs text-[var(--ink-soft)]">택배 건수<input type="number" min="1" id="outCourierCount" class="w-full mt-1" oninput="updateOutFeePreview()"></label>
             <label class="text-xs text-[var(--ink-soft)]">차감 PLT (선택)<input type="number" min="0" step="0.1" id="outDeductPlt" placeholder="0" class="w-full mt-1"></label>
           </div>
+          <div id="outBoxWrap" class="col-span-2 hidden grid grid-cols-2 gap-2">
+            <label class="text-xs text-[var(--ink-soft)]">박스 수량<input type="number" min="1" step="1" id="outBoxCount" class="w-full mt-1" oninput="updateOutFeePreview()"></label>
+            <label class="text-xs text-[var(--ink-soft)]">박스당 출고비 (원)<input type="number" min="0" step="1" id="outBoxRate" placeholder="기본 단가 적용" class="w-full mt-1" oninput="updateOutFeePreview()"></label>
+            <label class="text-xs text-[var(--ink-soft)] col-span-2">차감 PLT (선택)<input type="number" min="0" step="0.1" id="outBoxDeductPlt" placeholder="0" class="w-full mt-1"></label>
+            <p class="hint col-span-2">단가를 비워두면 설정의 기본 단가를 적용합니다. 단가가 다른 상자는 각각 등록하세요. 택배비가 필요한 경우 택배 출고로 별도 등록하세요.</p>
+          </div>
           <label class="text-xs text-[var(--ink-soft)] col-span-2">메모<input type="text" id="outMemo" placeholder="선택입력" class="w-full mt-1"></label>
         </div>
         <div id="outFeePreview" class="hint"></div>
         <button onclick="addEvent('out')" class="btn-primary w-full mt-3 py-2 rounded-lg font-bold text-sm">출고 등록</button>
-        <p class="hint">※ 택배 출고는 기본적으로 파렛트 재고에 반영되지 않습니다. 재고 차감이 필요하면 '차감 PLT'에 입력하세요. 한국/일반파렛트 출고비는 현재 0원(무료)으로 설정되어 있습니다.</p>
+        <p class="hint">※ 택배·상자 출고는 기본적으로 파렛트 재고에 반영되지 않습니다. 재고 차감이 필요하면 '차감 PLT'에 입력하세요.</p>
       </div>
     </div>
 
@@ -269,10 +276,13 @@
           <input type="number" id="cfgOutGeneral" class="w-full mt-1"></label>
         <label class="text-xs text-[var(--ink-soft)] block mb-2">택배비 (원/건)
           <input type="number" id="cfgOutCourier" class="w-full mt-1"></label>
+        <label class="text-xs text-[var(--ink-soft)] block mb-2">상자 출고비 기본 단가 (원/박스)
+          <input type="number" min="0" step="1" id="cfgOutBox" class="w-full mt-1"></label>
+        <p class="hint mb-2">예: 400원 또는 500원. 출고 건마다 단가를 변경할 수 있으며, 등록된 상자 출고는 당시 단가를 유지합니다.</p>
         <label class="text-xs text-[var(--ink-soft)] block mb-2">부가세율 (%)
           <input type="number" id="cfgVat" class="w-full mt-1"></label>
         <button onclick="saveConfig()" class="btn-primary w-full mt-2 py-2 rounded-lg font-bold text-sm">설정 저장</button>
-        <p class="hint">보관료는 입고일부터 출고일(또는 오늘)까지 매일 재고 PLT 기준으로 누적 계산됩니다. 이미 등록된 내역도 이 화면에서 단가를 바꾸면 정산서에 새 단가가 자동 반영됩니다. 한국/일반파렛트 출고비는 현재 0원으로 설정되어 있습니다.</p>
+        <p class="hint">보관료는 입고일부터 출고일(또는 오늘)까지 매일 재고 PLT 기준으로 누적 계산됩니다. 상자 출고를 제외한 기존 내역은 단가를 바꾸면 정산서에 새 단가가 자동 반영됩니다.</p>
       </div>
 
       <div class="card p-4">
@@ -311,7 +321,7 @@ let state = {
   settings: {
     storageFee: 900,
     containerFee: { '20ft': 200000, '40ft': 400000 },
-    outboundFee: { korean: 0, general: 0, courier: 3300 },
+    outboundFee: { korean: 0, general: 0, courier: 3300, box: 400 },
     vatRate: 0.1,
     supplier: { name: '(주)태성 - TS3PL', bizNo: '', ceo: '', address: '', phone: '' },
     shipper: { name: '진주불교사' }
@@ -384,6 +394,11 @@ async function loadData(){
   } else {
     state = Object.assign(state, seedData());
   }
+
+  // 이전 저장 데이터에는 상자 단가가 없으므로 기본값을 보완한다.
+  state.events = state.events || [];
+  state.costs = state.costs || [];
+  state.settings.outboundFee = Object.assign({ korean: 0, general: 0, courier: 3300, box: 400 }, state.settings.outboundFee);
 
   if(lastFirebaseError){
     setSyncStatus('error');
@@ -461,11 +476,16 @@ function switchTab(name){
 }
 
 // ---------- Fee logic ----------
+function boxRate(e){
+  return e.boxRate ?? state.settings.outboundFee.box ?? 400;
+}
+
 function eventFee(e){
   if(e.type === 'in'){
     const size = e.containerSize || '20ft';
     return state.settings.containerFee[size] || 0;
   }
+  if(e.method === 'box') return (e.count || 0) * boxRate(e);
   if(e.method === 'courier'){
     return (e.count||0) * (state.settings.outboundFee.courier||0);
   }
@@ -474,7 +494,7 @@ function eventFee(e){
 
 function stockDelta(e){
   if(e.type === 'in') return e.qty || 0;
-  if(e.method === 'courier') return -(e.deductPlt || 0);
+  if(e.method === 'courier' || e.method === 'box') return -(e.deductPlt || 0);
   return -(e.qty || 0);
 }
 
@@ -485,12 +505,14 @@ function eventTypeLabel(e){
   if(e.method === 'korean') return '한국파렛트';
   if(e.method === 'general') return '일반파렛트';
   if(e.method === 'courier') return '택배';
+  if(e.method === 'box') return '상자 (' + won(boxRate(e)) + '/박스)';
   return '-';
 }
 
 function eventQtyLabel(e){
   if(e.type === 'in') return (e.qty||0) + ' PLT';
   if(e.method === 'courier') return (e.count||0) + '건';
+  if(e.method === 'box') return (e.count||0) + '박스' + (e.deductPlt ? ` (차감 ${e.deductPlt} PLT)` : '');
   return (e.qty||0) + ' PLT';
 }
 
@@ -511,8 +533,9 @@ function eventRowHtml(e, withDelete){
 // ---------- Events (입출고) ----------
 function toggleOutFields(){
   const method = document.getElementById('outMethod').value;
-  document.getElementById('outQtyWrap').classList.toggle('hidden', method === 'courier');
+  document.getElementById('outQtyWrap').classList.toggle('hidden', method === 'courier' || method === 'box');
   document.getElementById('outCourierWrap').classList.toggle('hidden', method !== 'courier');
+  document.getElementById('outBoxWrap').classList.toggle('hidden', method !== 'box');
   updateOutFeePreview();
 }
 
@@ -532,7 +555,16 @@ function updateOutFeePreview(){
   const el = document.getElementById('outFeePreview');
   if(!el) return;
   const method = document.getElementById('outMethod').value;
-  if(method === 'courier'){
+  if(method === 'box'){
+    const count = Number(document.getElementById('outBoxCount').value);
+    const value = document.getElementById('outBoxRate').value;
+    const rate = value === '' ? (state.settings.outboundFee.box ?? 400) : Number(value);
+    if(!Number.isSafeInteger(count) || count < 0 || !Number.isSafeInteger(rate) || rate < 0 || !Number.isSafeInteger(count * rate)){
+      el.textContent = '박스 수량은 양의 정수, 단가는 0원 이상의 정수로 입력해주세요.';
+      return;
+    }
+    el.textContent = `예상 상자 출고비: ${count}박스 × ${won(rate)} = ${won(count * rate)} (부가세 별도)`;
+  } else if(method === 'courier'){
     const count = parseInt(document.getElementById('outCourierCount').value) || 0;
     const rate = state.settings.outboundFee.courier || 0;
     el.textContent = `예상 택배비: ${count}건 × ${won(rate)} = ${won(count*rate)}`;
@@ -574,7 +606,29 @@ function addEvent(type){
 
     const ev = { id: 'e'+Date.now()+Math.random().toString(36).slice(2,6), type: 'out', date, time, product, method, memo };
 
-    if(method === 'courier'){
+    if(method === 'box'){
+      const count = Number(document.getElementById('outBoxCount').value);
+      const rateValue = document.getElementById('outBoxRate').value;
+      const rate = rateValue === '' ? (state.settings.outboundFee.box ?? 400) : Number(rateValue);
+      const deductPlt = Number(document.getElementById('outBoxDeductPlt').value);
+      if(!Number.isSafeInteger(count) || count <= 0){
+        alert('박스 수량을 1 이상의 정수로 입력해주세요.');
+        return;
+      }
+      if(!Number.isSafeInteger(rate) || rate < 0 || !Number.isSafeInteger(count * rate)){
+        alert('박스당 출고비를 0원 이상의 정수로 올바르게 입력해주세요.');
+        return;
+      }
+      if(!Number.isFinite(deductPlt) || deductPlt < 0){
+        alert('차감 PLT를 0 이상의 숫자로 입력해주세요.');
+        return;
+      }
+      ev.count = count;
+      ev.boxRate = rate;
+      ev.deductPlt = deductPlt;
+      document.getElementById('outBoxCount').value = '';
+      document.getElementById('outBoxDeductPlt').value = '';
+    } else if(method === 'courier'){
       const count = parseInt(document.getElementById('outCourierCount').value);
       const deductPlt = parseFloat(document.getElementById('outDeductPlt').value) || 0;
       if(!count || count <= 0){
@@ -637,6 +691,12 @@ function deleteCost(id){
 
 // ---------- Config ----------
 function saveConfig(){
+  const boxValue = document.getElementById('cfgOutBox').value;
+  const box = Number(boxValue);
+  if(boxValue === '' || !Number.isSafeInteger(box) || box < 0){
+    alert('상자 출고비 기본 단가를 0원 이상의 정수로 입력해주세요.');
+    return;
+  }
   state.settings.storageFee = parseInt(document.getElementById('cfgStorage').value) || 900;
   state.settings.containerFee = {
     '20ft': parseInt(document.getElementById('cfgContainer20').value) || 0,
@@ -645,7 +705,8 @@ function saveConfig(){
   state.settings.outboundFee = {
     korean: parseInt(document.getElementById('cfgOutKorean').value) || 0,
     general: parseInt(document.getElementById('cfgOutGeneral').value) || 0,
-    courier: parseInt(document.getElementById('cfgOutCourier').value) || 0
+    courier: parseInt(document.getElementById('cfgOutCourier').value) || 0,
+    box
   };
   state.settings.vatRate = (parseFloat(document.getElementById('cfgVat').value) || 10) / 100;
   state.settings.supplier = {
@@ -756,6 +817,7 @@ function renderAll(){
   document.getElementById('stockHeadline').textContent = currentStock() + ' PLT';
   updateInFeePreview();
   updateOutFeePreview();
+  renderSettlement();
 }
 
 function renderGauge(){
@@ -782,9 +844,12 @@ function renderDashboard(){
   const now = new Date();
   const ym = fmtLocalDate(now).slice(0,7);
   const inMonth = state.events.filter(e=>e.type==='in' && e.date.startsWith(ym)).reduce((s,e)=>s+(e.qty||0),0);
-  const outMonth = state.events.filter(e=>e.type==='out' && e.date.startsWith(ym)).reduce((s,e)=> s + (e.method==='courier' ? (e.count||0) : (e.qty||0)) ,0);
+  const monthOut = state.events.filter(e=>e.type==='out' && e.date.startsWith(ym));
+  const outPlt = monthOut.filter(e=>e.method==='korean' || e.method==='general').reduce((s,e)=>s+(e.qty||0),0);
+  const outCourier = monthOut.filter(e=>e.method==='courier').reduce((s,e)=>s+(e.count||0),0);
+  const outBox = monthOut.filter(e=>e.method==='box').reduce((s,e)=>s+(e.count||0),0);
   document.getElementById('statInMonth').textContent = inMonth + ' PLT';
-  document.getElementById('statOutMonth').textContent = outMonth + ' (PLT+건)';
+  document.getElementById('statOutMonth').textContent = `${outPlt} PLT · ${outCourier}건 · ${outBox}박스`;
 
   const recent = state.events.slice().sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)).slice(0,8);
   const body = document.getElementById('recentEventsBody');
@@ -821,6 +886,8 @@ function renderSettingsForm(){
   document.getElementById('cfgOutKorean').value = state.settings.outboundFee.korean;
   document.getElementById('cfgOutGeneral').value = state.settings.outboundFee.general;
   document.getElementById('cfgOutCourier').value = state.settings.outboundFee.courier;
+  document.getElementById('cfgOutBox').value = state.settings.outboundFee.box ?? 400;
+  document.getElementById('outBoxRate').placeholder = `기본 ${won(state.settings.outboundFee.box ?? 400)}`;
   document.getElementById('cfgVat').value = Math.round(state.settings.vatRate*100);
   document.getElementById('cfgSupplierName').value = state.settings.supplier.name;
   document.getElementById('cfgSupplierBiz').value = state.settings.supplier.bizNo;
@@ -865,8 +932,15 @@ function renderSettlement(){
 
   // 출고: 방식별로 그룹핑
   const outGroups = { korean:{qty:0,total:0}, general:{qty:0,total:0}, courier:{count:0,total:0} };
+  const boxGroups = new Map();
   outRange.forEach(e=>{
-    if(e.method === 'courier'){
+    if(e.method === 'box'){
+      const rate = boxRate(e);
+      const group = boxGroups.get(rate) || { count: 0, total: 0 };
+      group.count += e.count || 0;
+      group.total += eventFee(e);
+      boxGroups.set(rate, group);
+    } else if(e.method === 'courier'){
       outGroups.courier.count += (e.count||0);
       outGroups.courier.total += eventFee(e);
     } else if(outGroups[e.method]){
@@ -881,7 +955,8 @@ function renderSettlement(){
   const costsTotal = costsInRange.reduce((s,c)=>s+c.amount,0);
 
   const inTotal = Object.values(inGroups).reduce((s,g)=>s+g.total,0);
-  const outTotal = outGroups.korean.total + outGroups.general.total + outGroups.courier.total;
+  const boxTotal = Array.from(boxGroups.values()).reduce((s,g)=>s+g.total,0);
+  const outTotal = outGroups.korean.total + outGroups.general.total + outGroups.courier.total + boxTotal;
   const subtotal = inTotal + outTotal + storage.total + costsTotal;
   const vat = subtotal * state.settings.vatRate;
   const total = subtotal + vat;
@@ -914,6 +989,9 @@ function renderSettlement(){
   if(outGroups.korean.qty > 0) logisticsRows += rowHtml('출고비 (한국파렛트)', `${outGroups.korean.qty} PLT × ${won(state.settings.outboundFee.korean)}`, outGroups.korean.total);
   if(outGroups.general.qty > 0) logisticsRows += rowHtml('출고비 (일반파렛트)', `${outGroups.general.qty} PLT × ${won(state.settings.outboundFee.general)}`, outGroups.general.total);
   if(outGroups.courier.count > 0) logisticsRows += rowHtml('택배비', `${outGroups.courier.count}건 × ${won(state.settings.outboundFee.courier)}`, outGroups.courier.total);
+  Array.from(boxGroups.entries()).sort((a,b)=>a[0]-b[0]).forEach(([rate,g])=>{
+    logisticsRows += rowHtml('상자 출고비', `${g.count}박스 × ${won(rate)}`, g.total);
+  });
 
   // 2) 보관료 섹션 (별도로 분리)
   let storageRows = '';
