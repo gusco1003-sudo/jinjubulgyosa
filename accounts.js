@@ -1,5 +1,6 @@
 (() => {
-  'use strict';const A=JinjuAuth,$=id=>document.getElementById(id);let issuing=false;
+  'use strict';const A=window.JinjuAuth,$=id=>document.getElementById(id);let issuing=false;
+  if(!A){$('message').textContent='인증 서비스를 불러오지 못했습니다. 인터넷 연결을 확인한 후 새로고침해 주세요.';return;}
   function message(text,error=false){$('message').textContent=text;$('message').className='notice'+(error?' error':'');}
   async function list(){
     $('accountList').replaceChildren();

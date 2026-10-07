@@ -1,5 +1,6 @@
 (() => {
-  'use strict';const $=id=>document.getElementById(id),A=JinjuAuth,M=JinjuMetrics;
+  'use strict';const $=id=>document.getElementById(id),A=window.JinjuAuth,M=window.JinjuMetrics;
+  if(!A||!M){$('authError').textContent='로그인 서비스를 불러오지 못했습니다. 인터넷 연결을 확인하고 새로고침해 주세요.';$('loginButton').disabled=true;return;}
   let model=null,busy=false,generation=0;
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num=x=>Math.round(x).toLocaleString('ko-KR');const won=x=>num(x)+'원';

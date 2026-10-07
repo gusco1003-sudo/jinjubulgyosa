@@ -1,0 +1,76 @@
+{
+  "rules": {
+    "counton_data": {
+      ".write": true,
+      ".read": true
+    },
+    "forlight_data": {
+      ".write": true,
+      ".read": true
+    },
+    "lunox_data": {
+      ".write": true,
+      ".read": true
+    },
+    "jeongsu": {
+      ".write": true,
+      ".read": true
+    },
+    "sbnutrition": {
+      ".write": true,
+      ".read": true
+    },
+    "nineblackkitchen": {
+      ".write": true,
+      ".read": true
+    },
+    "jinjubulgyosa": {
+      ".read": "(auth != null && auth.token.email === 'gusco1003@gmail.com' && auth.token.email_verified === true && auth.token.firebase.sign_in_provider === 'google.com') || (auth != null && root.child('jinjuAccess').child(auth.uid).child('active').val() === true)",
+      ".write": "auth != null && auth.token.email === 'gusco1003@gmail.com' && auth.token.email_verified === true && auth.token.firebase.sign_in_provider === 'google.com'"
+    },
+    "koreaprovidence_data": {
+      ".validate": "newData.hasChildren(['app', 'version', 'revision', 'vat']) && newData.child('app').val() === 'korea-providence' && newData.child('version').val() === 1 && newData.child('vat').val() === 'exclusive' && newData.child('revision').isNumber() && ((!data.exists() && newData.child('revision').val() === 1) || (data.exists() && newData.child('revision').val() === data.child('revision').val() + 1))",
+      ".read": true,
+      ".write": "newData.exists()"
+    },
+    "fcmaterial": {
+      ".read": true,
+      ".write": true
+    },
+    "newhansol_data": {
+      ".read": true,
+      ".write": true
+    },
+    "foodtravel_data": {
+      ".read": true,
+      ".write": true
+    },
+    "aekyung_data": {
+      ".read": true,
+      ".write": true
+    },
+    "jinjuAccess": {
+      ".read": "auth != null && auth.token.email === 'gusco1003@gmail.com' && auth.token.email_verified === true && auth.token.firebase.sign_in_provider === 'google.com'",
+      ".write": "auth != null && auth.token.email === 'gusco1003@gmail.com' && auth.token.email_verified === true && auth.token.firebase.sign_in_provider === 'google.com'",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['username','label','active','createdAt'])",
+        "username": {
+          ".validate": "newData.isString() && newData.val().length >= 4 && newData.val().length <= 32"
+        },
+        "label": {
+          ".validate": "newData.isString() && newData.val().length <= 60"
+        },
+        "active": {
+          ".validate": "newData.isBoolean()"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}
