@@ -4,7 +4,7 @@
   let model=null,busy=false,generation=0;
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num=x=>Math.round(x).toLocaleString('ko-KR');const won=x=>num(x)+'원';
-  function clear(){model=null;generation++;$('dataArea').hidden=true;$('dashboard').hidden=true;$('login').hidden=false;for(const id of ['dispatchList','dailyRows','stockRows','costRows'])$(id).replaceChildren();}
+  function clear(){model=null;generation++;$('dataArea').hidden=true;$('dashboard').hidden=true;$('login').hidden=false;for(const id of ['dispatchList','dailyRows','stockRows','costRows','stock','courierCount','dispatchSub','todayCost','todayVat','monthCost','monthRange','dispatchCounts','costNote'])$(id).replaceChildren();}
   function status(message,error=false){$('status').textContent=message;$('status').className='notice'+(error?' error':'');$('status').hidden=!message;}
   function dispatch(){
     if(!model)return;const query=$('shipmentSearch').value.trim().toLowerCase();let html='';
