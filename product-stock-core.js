@@ -49,5 +49,13 @@
     if(target&&(list(data.productStock?.baselineEventIds).includes(target.id)||list(target.stockLines).length))return [];
     return shipments;
   }
-  const api={key,list,balances,resolve,item,plan,stockShipments};if(typeof module==='object'&&module.exports)module.exports=api;else root.JinjuStockCore=api;
+  function manualPlan(data,rows){
+    if(!data.productStock)return {lines:[],errors:['제품별 기준 재고를 먼저 불러와 주세요.']};
+    const products=new Map(balances(data).map(p=>[p.id,p])),totals=new Map(),errors=[];
+    if(!rows.length)errors.push('출고할 제품을 추가해 주세요.');
+    rows.forEach((r,i)=>{const p=products.get(r.productId),q=Number(r.quantity);if(!p)errors.push(`${i+1}번째 제품을 선택해 주세요.`);if(!Number.isSafeInteger(q)||q<=0)errors.push(`${i+1}번째 제품의 BOX 수량을 양의 정수로 입력하세요.`);if(p&&Number.isSafeInteger(q)&&q>0)totals.set(p.id,(totals.get(p.id)||0)+q);});
+    const lines=[...totals].map(([productId,quantity])=>{const p=products.get(productId);if(!Number.isSafeInteger(quantity)||quantity>p.balance)errors.push(`${p.name}: 현재 ${p.balance} BOX로 출고 수량이 재고보다 많습니다.`);return {productId,name:p.name,quantity,before:p.balance,after:p.balance-quantity};});
+    return {lines,errors};
+  }
+  const api={key,list,balances,resolve,item,plan,stockShipments,manualPlan};if(typeof module==='object'&&module.exports)module.exports=api;else root.JinjuStockCore=api;
 })(typeof window==='object'?window:globalThis);

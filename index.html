@@ -52,9 +52,10 @@
   }
 </style>
 <script defer src="./stock-sync.js?v=20261007.1"></script>
-<script defer src="./product-stock-core.js?v=20261007.1"></script>
+<script defer src="./product-stock-core.js?v=20261008.1"></script>
 <script defer src="./courier-import.js?v=20261007.3"></script>
-<script defer src="./product-stock-ui.js?v=20261007.1"></script>
+<script defer src="./product-stock-ui.js?v=20261008.1"></script>
+<script defer src="./manual-out-stock.js?v=20261008.1"></script>
 <script defer src="https://gusco1003-sudo.github.io/total/ts-workspace-theme.js?v=20261007.1" data-client="jinju"></script>
 </head>
 <body class="min-h-screen">
@@ -171,7 +172,7 @@
             </select>
           </label>
           <div id="outQtyWrap" class="col-span-2">
-            <label class="text-xs text-[var(--ink-soft)] block">PLT 수량<input type="number" min="1" id="outQty" class="w-full mt-1" oninput="updateOutFeePreview()"></label>
+            <label class="text-xs text-[var(--ink-soft)] block">PLT 수량<input type="number" min="0.1" step="0.1" id="outQty" class="w-full mt-1" oninput="updateOutFeePreview()"></label>
           </div>
           <div id="outCourierWrap" class="col-span-2 hidden grid grid-cols-2 gap-2">
             <label class="text-xs text-[var(--ink-soft)]">택배 건수<input type="number" min="1" id="outCourierCount" class="w-full mt-1" oninput="updateOutFeePreview()"></label>
@@ -187,7 +188,7 @@
         </div>
         <div id="outFeePreview" class="hint"></div>
         <button onclick="addEvent('out')" class="btn-primary w-full mt-3 py-2 rounded-lg font-bold text-sm">출고 등록</button>
-        <p class="hint">※ 택배·상자 출고는 기본적으로 파렛트 재고에 반영되지 않습니다. 재고 차감이 필요하면 '차감 PLT'에 입력하세요.</p>
+        <p class="hint">※ 박스·파렛트 출고는 선택한 제품의 BOX를 차감합니다. 파렛트 출고는 보관 PLT도 함께 차감합니다. 박스출고로 파렛트가 비워지면 '차감 PLT'도 입력하세요. 택배 제품 차감은 피킹리스트 등록에서 처리합니다.</p>
       </div>
     </div>
 
@@ -574,7 +575,7 @@ function updateOutFeePreview(){
     const rate = state.settings.outboundFee.courier || 0;
     el.textContent = `예상 택배비: ${count}건 × ${won(rate)} = ${won(count*rate)}`;
   } else {
-    const qty = parseInt(document.getElementById('outQty').value) || 0;
+    const qty = Number(document.getElementById('outQty').value) || 0;
     const rate = state.settings.outboundFee[method] || 0;
     const label = method === 'korean' ? '한국파렛트' : '일반파렛트';
     el.textContent = `예상 출고비 (${label}): ${qty} PLT × ${won(rate)} = ${won(qty*rate)}`;
@@ -631,8 +632,6 @@ function addEvent(type){
       ev.count = count;
       ev.boxRate = rate;
       ev.deductPlt = deductPlt;
-      document.getElementById('outBoxCount').value = '';
-      document.getElementById('outBoxDeductPlt').value = '';
     } else if(method === 'courier'){
       const count = parseInt(document.getElementById('outCourierCount').value);
       const deductPlt = parseFloat(document.getElementById('outDeductPlt').value) || 0;
@@ -642,19 +641,22 @@ function addEvent(type){
       }
       ev.count = count;
       ev.deductPlt = deductPlt;
-      document.getElementById('outCourierCount').value = '';
-      document.getElementById('outDeductPlt').value = '';
     } else {
-      const qty = parseInt(document.getElementById('outQty').value);
-      if(!qty || qty <= 0){
+      const qty = Number(document.getElementById('outQty').value);
+      if(!Number.isFinite(qty) || qty <= 0){
         alert('PLT 수량을 올바르게 입력해주세요.');
         return;
       }
       ev.qty = qty;
-      document.getElementById('outQty').value = '';
     }
 
+    if(['box','korean','general'].includes(method)){
+      if(!window.JinjuManualStock){alert('재고 기능을 불러오지 못했습니다. 새로고침 후 다시 등록하세요.');return;}
+      if(!window.JinjuManualStock.prepare(ev))return;
+    }
     state.events.push(ev);
+    ['outBoxCount','outBoxDeductPlt','outCourierCount','outDeductPlt','outQty'].forEach(id=>document.getElementById(id).value='');
+    if(['box','korean','general'].includes(method))window.JinjuManualStock.clear();
     document.getElementById('outMemo').value = '';
   }
 
