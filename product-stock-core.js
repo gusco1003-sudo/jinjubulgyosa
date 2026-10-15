@@ -57,5 +57,22 @@
     const lines=[...totals].map(([productId,quantity])=>{const p=products.get(productId);if(!Number.isSafeInteger(quantity)||quantity>p.balance)errors.push(`${p.name}: 현재 ${p.balance} BOX로 출고 수량이 재고보다 많습니다.`);return {productId,name:p.name,quantity,before:p.balance,after:p.balance-quantity};});
     return {lines,errors};
   }
-  const api={key,list,balances,resolve,item,plan,stockShipments,manualPlan};if(typeof module==='object'&&module.exports)module.exports=api;else root.JinjuStockCore=api;
+  function addProduct(data,input,id,date,createdAt=Date.now()){
+    if(!data?.productStock)throw Error('제품별 기준 재고를 먼저 불러와 주세요.');
+    const name=String(input.name??'').trim(),quantity=Number(input.quantity),rawCapacity=String(input.boxesPerPallet??'').trim(),capacity=rawCapacity===''?null:Number(rawCapacity);
+    if(!name||name.length>100||!key(name))throw Error('품목명은 1~100자로 입력하세요.');
+    if(String(input.quantity??'').trim()===''||!Number.isSafeInteger(quantity)||quantity<0||quantity>1000000)throw Error('현재 BOX는 0 이상 1,000,000 이하 정수로 입력하세요.');
+    if(capacity!==null&&(!Number.isSafeInteger(capacity)||capacity<1||capacity>1000000))throw Error('파렛트당 BOX는 1 이상의 정수로 입력하거나 비워두세요.');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date||date<data.productStock.deductionStartDate)throw Error('품목 등록일을 확인하세요.');
+    const products=list(data.productStock.products),aliases=String(input.aliases??'').split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
+    if(aliases.length>20||aliases.some(s=>s.length>100||!key(s)))throw Error('피킹리스트 별칭은 100자 이내로 최대 20개 입력하세요.');
+    const names=[name,...aliases],normalized=names.map(key),existing=new Set(products.flatMap(p=>[p.name,...list(p.aliases)].map(key)));
+    if(new Set(normalized).size!==normalized.length||normalized.some(n=>existing.has(n)))throw Error('이미 등록된 품목명 또는 별칭입니다. 기존 품목의 재고 입고·조정을 사용하세요.');
+    if(!/^[A-Za-z0-9_-]{1,100}$/.test(id)||products.some(p=>p.id===id))throw Error('품목 식별자를 확인하세요.');
+    const next=JSON.parse(JSON.stringify(data));next.productStock.products=list(next.productStock.products);
+    next.productStock.products.push({id,name,aliases,opening:0,referencePallets:null,boxesPerPallet:capacity,createdAt,createdDate:date});
+    if(quantity){next.productStock.movements=list(next.productStock.movements);next.productStock.movements.push({id:'initial-'+id,date,productId:id,quantity,reason:'신규 품목 등록 · 현재 재고',createdAt});}
+    next.lastModified=createdAt;return next;
+  }
+  const api={key,list,balances,resolve,item,plan,stockShipments,manualPlan,addProduct};if(typeof module==='object'&&module.exports)module.exports=api;else root.JinjuStockCore=api;
 })(typeof window==='object'?window:globalThis);
