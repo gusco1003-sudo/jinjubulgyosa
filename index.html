@@ -57,6 +57,7 @@
 <script defer src="./product-stock-ui.js?v=20261008.1"></script>
 <script defer src="./manual-out-stock.js?v=20261008.1"></script>
 <script defer src="./product-add-ui.js?v=20261015.1"></script>
+<script defer src="./return-management.js?v=20261016.1"></script>
 <script defer src="https://gusco1003-sudo.github.io/total/ts-workspace-theme.js?v=20261007.1" data-client="jinju"></script>
 </head>
 <body class="min-h-screen">
@@ -881,7 +882,7 @@ function renderCostsTable(){
   body.innerHTML = all.map(c => `
     <tr>
       <td class="tabular">${c.date}</td>
-      <td>${c.desc}</td>
+      <td>${String(c.desc??'').replace(/[&<>"']/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}</td>
       <td class="tabular text-right">${won(c.amount)}</td>
       <td class="no-print"><button onclick="deleteCost('${c.id}')" class="text-[var(--danger)] text-xs font-bold">삭제</button></td>
     </tr>`).join('') || `<tr><td colspan="4" class="text-center text-[var(--ink-soft)] py-6">등록된 비용이 없습니다.</td></tr>`;
@@ -1010,7 +1011,7 @@ function renderSettlement(){
 
   // 3) 기타비용 섹션
   let costRows = '';
-  costsInRange.forEach(c => { costRows += rowHtml(c.desc, c.date, c.amount); });
+  costsInRange.forEach(c => { costRows += rowHtml(String(c.desc??'').replace(/[&<>"']/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])), c.date, c.amount); });
 
   let bodyHtml = '';
   if(logisticsRows) bodyHtml += sectionHtml('입출고 비용', inTotal + outTotal) + logisticsRows;
