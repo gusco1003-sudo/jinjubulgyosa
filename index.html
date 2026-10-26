@@ -52,12 +52,13 @@
   }
 </style>
 <script defer src="./stock-sync.js?v=20261007.1"></script>
-<script defer src="./product-stock-core.js?v=20261015.1"></script>
-<script defer src="./courier-import.js?v=20261007.3"></script>
-<script defer src="./product-stock-ui.js?v=20261008.1"></script>
-<script defer src="./manual-out-stock.js?v=20261008.1"></script>
-<script defer src="./product-add-ui.js?v=20261015.1"></script>
-<script defer src="./return-management.js?v=20261016.1"></script>
+<script src="./pallet-stock-core.js?v=20261026.1"></script>
+<script defer src="./product-stock-core.js?v=20261026.1"></script>
+<script defer src="./courier-import.js?v=20261026.1"></script>
+<script defer src="./product-stock-ui.js?v=20261026.1"></script>
+<script defer src="./manual-out-stock.js?v=20261026.1"></script>
+<script defer src="./product-add-ui.js?v=20261026.1"></script>
+<script defer src="./return-management.js?v=20261026.1"></script>
 <script defer src="https://gusco1003-sudo.github.io/total/ts-workspace-theme.js?v=20261007.1" data-client="jinju"></script>
 </head>
 <body class="min-h-screen">
@@ -156,7 +157,7 @@
         </div>
         <div id="inFeePreview" class="hint"></div>
         <button onclick="addEvent('in')" class="btn-primary w-full mt-3 py-2 rounded-lg font-bold text-sm">입고 등록</button>
-        <p class="hint">※ 하차비는 PLT 수량과 무관하게 컨테이너 1회당 고정 비용입니다.</p>
+        <p class="hint">※ 하차비는 컨테이너 1회당 고정 비용입니다. 입고 상품은 제품별 재고에서도 BOX 입고를 등록해야 보관 PLT와 보관료에 반영됩니다.</p>
       </div>
 
       <div class="card p-4">
@@ -190,7 +191,7 @@
         </div>
         <div id="outFeePreview" class="hint"></div>
         <button onclick="addEvent('out')" class="btn-primary w-full mt-3 py-2 rounded-lg font-bold text-sm">출고 등록</button>
-        <p class="hint">※ 박스·파렛트 출고는 선택한 제품의 BOX를 차감합니다. 파렛트 출고는 보관 PLT도 함께 차감합니다. 박스출고로 파렛트가 비워지면 '차감 PLT'도 입력하세요. 택배 제품 차감은 피킹리스트 등록에서 처리합니다.</p>
+        <p class="hint">※ 박스·파렛트·택배 출고는 제품 BOX를 차감하며, 남은 BOX 기준으로 보관 PLT와 보관료를 자동 재계산합니다. 출고 PLT 입력은 출고 작업비와 원장 기록에 사용합니다.</p>
       </div>
     </div>
 
@@ -243,6 +244,7 @@
         <div>
           <div class="text-xs text-[var(--ink-soft)]">SETTLEMENT STATEMENT</div>
           <h2 class="text-xl font-extrabold">보관·물류비 정산서</h2>
+          <p id="palletInvoiceBasis" class="hint"></p><p class="hint">발생 보관료: 한국시간 오늘까지 · 제품 기준일 이후 당일 입출고 반영 · 혼적 환산 합계 올림</p>
           <div class="text-xs text-[var(--ink-soft)] mt-1" id="invoicePeriod">기간: -</div>
         </div>
         <div class="text-right text-xs text-[var(--ink-soft)] leading-relaxed" id="supplierBlock"></div>
@@ -290,7 +292,7 @@
         <label class="text-xs text-[var(--ink-soft)] block mb-2">부가세율 (%)
           <input type="number" id="cfgVat" class="w-full mt-1"></label>
         <button onclick="saveConfig()" class="btn-primary w-full mt-2 py-2 rounded-lg font-bold text-sm">설정 저장</button>
-        <p class="hint">보관료는 입고일부터 출고일(또는 오늘)까지 매일 재고 PLT 기준으로 누적 계산됩니다. 상자 출고를 제외한 기존 내역은 단가를 바꾸면 정산서에 새 단가가 자동 반영됩니다.</p>
+        <p class="hint">제품 재고 기준일 이후 보관료는 당일 입출고 후 남은 BOX를 품목별 적재 기준으로 나눈 뒤 합산·올림한 PLT로 계산합니다. 출고분은 당일부터 제외합니다. 기준일 이전은 기존 파렛트 원장을 유지하며, 이번달 정산은 한국시간 오늘까지만 계산합니다. 상자 출고를 제외한 기존 내역은 단가를 바꾸면 정산서에 새 단가가 자동 반영됩니다.</p>
       </div>
 
       <div class="card p-4">
@@ -362,7 +364,8 @@ function fmtLocalDate(d){
   return `${y}-${m}-${day}`;
 }
 function todayStr(){
-  return fmtLocalDate(new Date());
+  // 정산 기준일은 접속 기기의 시간대와 무관하게 한국 날짜를 사용합니다.
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 // ---------- Save (localStorage 항상 우선 저장 + Firebase는 보조 동기화) ----------
@@ -462,7 +465,7 @@ async function manualSave(){
 function updateLastSavedLabel(){
   const el = document.getElementById('lastSavedText');
   if(!el) return;
-  const now = new Date();
+  const now = new Date(todayStr()+'T12:00:00');
   el.textContent = '마지막 저장 ' + now.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
 }
 
@@ -742,14 +745,19 @@ function resetAllData(){
 
 // ---------- Calculations ----------
 function currentStock(){
+  if(state.productStock) return JinjuPalletCore.calculate(state,todayStr(),todayStr(),todayStr()).current;
   let bal = 0;
-  state.events.slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).forEach(e=>{
+  state.events.filter(e => e.date <= todayStr()).slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).forEach(e=>{
     bal += stockDelta(e);
   });
   return bal;
 }
 
 function calcStorage(fromDate, toDate){
+  if(state.productStock) return JinjuPalletCore.calculate(state,fromDate,toDate,todayStr());
+  // 실제 발생 정산에는 아직 지나지 않은 날짜를 포함하지 않습니다.
+  toDate = toDate > todayStr() ? todayStr() : toDate;
+  if(fromDate > toDate) return { total: 0, plDays: 0, segments: [] };
   // 입고는 당일 즉시 반영(당일부터 보관료 부과), 출고는 당일 보관료는 그대로 부과하고
   // 재고 차감은 다음날부터 적용되도록 입고/출고 델타를 분리해서 처리한다.
   const inDeltas = {};
@@ -850,7 +858,7 @@ function renderDashboard(){
   const storage = calcStorage(getFirstEventDate(), todayStr());
   document.getElementById('statStorage').textContent = won(storage.total);
 
-  const now = new Date();
+  const now = new Date(todayStr()+'T12:00:00');
   const ym = fmtLocalDate(now).slice(0,7);
   const inMonth = state.events.filter(e=>e.type==='in' && e.date.startsWith(ym)).reduce((s,e)=>s+(e.qty||0),0);
   const monthOut = state.events.filter(e=>e.type==='out' && e.date.startsWith(ym));
@@ -906,11 +914,11 @@ function renderSettingsForm(){
 }
 
 function setRange(kind){
-  const now = new Date();
+  const now = new Date(todayStr()+'T12:00:00');
   let from, to;
   if(kind === 'thisMonth'){
     from = new Date(now.getFullYear(), now.getMonth(), 1);
-    to = new Date(now.getFullYear(), now.getMonth()+1, 0);
+    to = now;
   } else if(kind === 'lastMonth'){
     from = new Date(now.getFullYear(), now.getMonth()-1, 1);
     to = new Date(now.getFullYear(), now.getMonth(), 0);
@@ -925,7 +933,10 @@ function setRange(kind){
 
 function renderSettlement(){
   const from = document.getElementById('settleFrom').value || getFirstEventDate();
-  const to = document.getElementById('settleTo').value || todayStr();
+  const requestedTo = document.getElementById('settleTo').value || todayStr();
+  const to = requestedTo > todayStr() ? todayStr() : requestedTo;
+  document.getElementById('settleTo').value = to;
+  document.getElementById('settleTo').max = todayStr();
 
   const inRange = state.events.filter(e => e.type==='in' && e.date>=from && e.date<=to);
   const outRange = state.events.filter(e => e.type==='out' && e.date>=from && e.date<=to);
@@ -1004,6 +1015,8 @@ function renderSettlement(){
 
   // 2) 보관료 섹션 (별도로 분리)
   let storageRows = '';
+  const palletBasis = document.getElementById('palletInvoiceBasis');
+  if(palletBasis) palletBasis.textContent = state.productStock ? `${state.productStock.deductionStartDate}부터 일별 남은 BOX ÷ 품목별 BOX/PLT 합계를 올림하여 재계산합니다. 이전 날짜는 기존 파렛트 원장을 사용합니다.` : '기존 파렛트 원장 기준';
   storage.segments.filter(s => s.balance > 0).forEach(s => {
     const label = s.start === s.end ? s.start : `${s.start} ~ ${s.end}`;
     storageRows += rowHtml(`보관료 (${label})`, `${s.balance} PLT 보관 × ${s.days}일 × ${won(state.settings.storageFee)}`, s.fee);
@@ -1034,5 +1047,6 @@ window.addEventListener('DOMContentLoaded', () => {
   loadData();
 });
 </script>
+<script defer src="./pallet-stock-ui.js?v=20261026.1"></script>
 </body>
 </html>

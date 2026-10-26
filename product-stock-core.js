@@ -62,7 +62,7 @@
     const name=String(input.name??'').trim(),quantity=Number(input.quantity),rawCapacity=String(input.boxesPerPallet??'').trim(),capacity=rawCapacity===''?null:Number(rawCapacity);
     if(!name||name.length>100||!key(name))throw Error('품목명은 1~100자로 입력하세요.');
     if(String(input.quantity??'').trim()===''||!Number.isSafeInteger(quantity)||quantity<0||quantity>1000000)throw Error('현재 BOX는 0 이상 1,000,000 이하 정수로 입력하세요.');
-    if(capacity!==null&&(!Number.isSafeInteger(capacity)||capacity<1||capacity>1000000))throw Error('파렛트당 BOX는 1 이상의 정수로 입력하거나 비워두세요.');
+    if(capacity===null||!Number.isSafeInteger(capacity)||capacity<1||capacity>1000000)throw Error('보관료 자동 계산을 위해 파렛트당 BOX를 1 이상의 정수로 입력하세요.');
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date||date<data.productStock.deductionStartDate)throw Error('품목 등록일을 확인하세요.');
     const products=list(data.productStock.products),aliases=String(input.aliases??'').split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
     if(aliases.length>20||aliases.some(s=>s.length>100||!key(s)))throw Error('피킹리스트 별칭은 100자 이내로 최대 20개 입력하세요.');

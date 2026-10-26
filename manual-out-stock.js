@@ -24,7 +24,7 @@
     const values=rows(),total=values.reduce((n,r)=>n+(Number(r.quantity)||0),0),plan=S.manualPlan(state,values);
     if($('outMethod').value==='box'){$('outBoxCount').value=total||'';updateOutFeePreview();}
     const first=S.list(state.productStock?.products).find(p=>p.id===values[0]?.productId);
-    $('manualStockCapacity').textContent=$('outMethod').value==='box'?'박스출고로 파렛트까지 비워지는 경우에만 차감 PLT를 입력하세요.':`파렛트 출고는 PLT와 제품 BOX를 함께 차감합니다.${first?.boxesPerPallet?' '+first.name+' 기준: 1 PLT = '+first.boxesPerPallet+' BOX.':''} 혼합·부분 파렛트는 실제 BOX를 직접 입력하세요.`;
+    $('manualStockCapacity').textContent=$('outMethod').value==='box'?'보관 PLT는 박스 잔량에서 자동 환산됩니다. 차감 PLT는 기존 입출고 원장용 참고값입니다.':`파렛트 출고비는 입력 PLT로, 보관료는 제품 BOX 잔량으로 계산합니다.${first?.boxesPerPallet?' '+first.name+' 기준: 1 PLT = '+first.boxesPerPallet+' BOX.':''} 혼합·부분 파렛트는 실제 BOX를 직접 입력하세요.`;
     $('manualStockPreview').innerHTML=plan.errors.map(e=>`<div style="color:#b42318">${esc(e)}</div>`).join('')+plan.lines.map(l=>`<div>${esc(l.name)}: ${l.before} − ${l.quantity} = <strong>${l.after} BOX</strong></div>`).join('');
   }
   function clear(){ $('manualStockRows').replaceChildren();addRow();refresh(); }
@@ -37,7 +37,7 @@
     const plan=S.manualPlan(state,rows());if(plan.errors.length){alert(plan.errors.join('\n'));return false;}
     const sum=plan.lines.reduce((n,l)=>n+l.quantity,0);
     if(ev.method==='box'&&ev.count!==sum){alert('박스 합계와 제품별 출고 수량을 확인해 주세요.');return false;}
-    if(!confirm(`${ev.date} ${ev.method==='box'?'박스':'파렛트'} 출고\n${plan.lines.map(l=>`${l.name}: ${l.quantity} BOX 차감 → ${l.after} BOX`).join('\n')}\n파렛트 차감: ${pallets} PLT\n출고비: ${won(eventFee(ev))}\n재고와 정산에 함께 반영할까요?`))return false;
+    if(!confirm(`${ev.date} ${ev.method==='box'?'박스':'파렛트'} 출고\n${plan.lines.map(l=>`${l.name}: ${l.quantity} BOX 차감 → ${l.after} BOX`).join('\n')}\n파렛트 출고 기록: ${pallets} PLT\n출고비: ${won(eventFee(ev))}\n재고와 정산에 함께 반영할까요?`))return false;
     ev.stockLines=plan.lines.map(({productId,quantity})=>({productId,quantity}));ev.product=plan.lines.map(l=>l.name+' '+l.quantity+'BOX').join(', ');return true;
   }
   $('manualStockAdd').onclick=()=>{addRow();refresh();};
