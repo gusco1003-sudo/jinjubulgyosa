@@ -16,6 +16,16 @@
     if(typeof portalBridge==='undefined')throw Error('관리자 화면에서 수정하세요.');
     const session=await portalBridge.session;
     if(session.key!=='jinjubulgyosa'||session.writable!==true)throw Error('관리자만 재고를 수정할 수 있습니다.');
+    return commitState(next);
+  }
+  async function commitCourierDate(id,date){
+    if(typeof portalBridge!=='undefined'){
+      const session=await portalBridge.session;
+      if(session.key!=='jinjubulgyosa'||session.writable!==true)throw Error('관리자만 발송일을 수정할 수 있습니다.');
+    }
+    return commitState(window.JinjuCourier.changeDate(state,id,date));
+  }
+  async function commitState(next){
     if(committing||!loaded||!tag)throw Error('서버 연결을 확인하고 새로고침한 뒤 다시 저장하세요.');
     if(dirty)throw Error('아직 저장되지 않은 다른 작업이 있습니다. 상단의 지금 저장을 완료한 뒤 다시 시도하세요.');
     const previous=state;committing=true;clearTimeout(saveTimer);
@@ -31,7 +41,7 @@
       throw Error('저장이 확인되지 않았습니다. 새로고침 후 서버 재고를 확인하고 다시 시도하세요. '+err.message);
     }finally{committing=false;for(const [el,disabled] of controls)el.disabled=disabled;}
   }
-  window.JinjuStockSync={ready:()=>loaded&&!committing,dirty:()=>dirty,commit};
+  window.JinjuStockSync={ready:()=>loaded&&!committing,dirty:()=>dirty,commit,commitCourierDate};
   for(const name of ['addEvent','deleteEvent','addCost','deleteCost','saveConfig','resetAllData']){const base=window[name];window[name]=function(...args){if(!loaded){alert('서버 자료를 먼저 불러와 주세요. 저장 충돌이 있었다면 새로고침 후 다시 등록하세요.');return;}return base.apply(this,args);};}
   window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
 })();

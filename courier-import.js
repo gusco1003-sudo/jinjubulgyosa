@@ -77,13 +77,35 @@
     }
     return result.sort((a,b) => b.event.date.localeCompare(a.event.date) || a.tracking.localeCompare(b.tracking));
   }
-  const api = {normalize, validDate, parseSheets, splitNew, query, shortAddress, enrich};
+  function changeDate(data, id, date, changedAt=Date.now()) {
+    if (!validDate(date)) throw Error('올바른 발송일을 선택하세요.');
+    const next=JSON.parse(JSON.stringify(data));
+    const matches=(next.events||[]).filter(e=>e.id===id && e.type==='out' && e.method==='courier');
+    if(matches.length!==1) throw Error('수정할 택배 등록 내역을 찾을 수 없습니다. 새로고침 후 확인하세요.');
+    const event=matches[0], previous=event.date, inv=next.productStock;
+    if(!validDate(previous)) throw Error('기존 발송일을 확인하세요.');
+    if(previous===date) throw Error('기존 발송일과 같은 날짜입니다.');
+    const start=inv?.deductionStartDate||inv?.baselineDate;
+    if(start && (previous<start)!==(date<start)) throw Error('재고 기준일을 넘겨 날짜를 변경할 수 없습니다. 기준 재고와 연결된 출고를 먼저 확인하세요.');
+    event.date=date;
+    event.dateHistory=Stock.list(event.dateHistory);
+    event.dateHistory.push({from:previous,to:date,changedAt});
+    if(inv) {
+      const pallet=root.JinjuPalletCore||(typeof require==='function'?require('./pallet-stock-core.js'):null);
+      if(!pallet) throw Error('재고 검증 기능을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.');
+      const end=[date,previous,...Stock.list(next.events).map(e=>e.date),...Stock.list(inv.movements).map(m=>m.date)].filter(validDate).sort().at(-1);
+      pallet.calculate(next,inv.baselineDate,end,end);
+    }
+    return next;
+  }
+  const api = {normalize, validDate, parseSheets, splitNew, query, shortAddress, enrich, changeDate};
   if (typeof module !== 'undefined' && module.exports) {module.exports = api; return;}
   root.JinjuCourier = api;
   const $ = id => document.getElementById(id);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let draft = null, ready = false, busy = false, fileVersion = 0;
   let stockSelections = {};
+  let editingId = null, dateBusy = false;
   const baseLoad = loadData;
   loadData = async function () { ready = false; try { ready = await baseLoad() !== false; } finally { renderCourier(); } };
   const baseRender = renderAll;
@@ -124,12 +146,47 @@
     const from=$('courierFrom').value, to=$('courierTo').value, term=$('courierSearch').value;
     if (!term && from && to && from>to) { $('courierResults').textContent='조회 시작일이 종료일보다 늦습니다.'; return; }
     const rows=query(state.events||[],from,to,term), daily=new Map();
+    renderBatches(rows);
     rows.forEach(r=>daily.set(r.event.date,(daily.get(r.event.date)||0)+r.count));
     const count=rows.reduce((n,r)=>n+r.count,0);
     $('courierSummary').textContent=`${term?'송장 검색 · 전체 기간':'선택 기간'}: ${count.toLocaleString()}건 · 택배비 ${won(count*rate())} (공급가액) · 적용 단가 ${won(rate())}/건`;
     $('courierDaily').innerHTML=[...daily].map(([d,n])=>`<button type="button" class="btn-ghost" data-day="${d}" style="padding:8px 12px;margin:4px">${d} · ${n}건 · ${won(n*rate())}</button>`).join('');
     $('courierResults').innerHTML=rows.length ? `<table><thead><tr><th>발송일</th><th>송장번호</th><th>받는 분</th><th>간단 주소</th><th>품목</th><th>택배 건수</th><th>택배비</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.event.date)}</td><td>${esc(r.tracking||'미등록 (수동 정산)')}</td><td>${esc(r.recipient||'미등록')}</td><td style="white-space:normal;min-width:180px">${esc(r.address||'미등록')}</td><td style="white-space:normal;min-width:180px">${esc(r.product)}</td><td>${r.count}건</td><td>${won(r.count*rate())}</td></tr>`).join('')}</tbody></table>` : '<p style="padding:16px">조회되는 택배 출고가 없습니다.</p>';
     preview();
+  }
+  function dateMessage(text,error=false) {
+    $('courierDateMessage').textContent=text;
+    $('courierDateMessage').style.color=error?'#b42318':'#0D7377';
+  }
+  function renderBatches(rows) {
+    if(!$('courierBatches')) return;
+    const batches=[...new Map(rows.map(r=>[r.event.id,r.event])).values()];
+    $('courierBatches').innerHTML=batches.length?`<h3 style="font-weight:700;margin:18px 0 8px">등록 묶음별 발송일 수정</h3><p class="hint">잘못 올린 묶음의 발송일을 수정하세요. 해당 묶음의 모든 송장과 정산·재고 반영일이 함께 바뀝니다.</p><div style="overflow:auto"><table><thead><tr><th>현재 발송일</th><th>등록 자료</th><th>전체 건수</th><th>수정</th></tr></thead><tbody>${batches.map(e=>`<tr><td>${esc(e.date)}</td><td style="white-space:normal">${esc(e.sourceFile||e.product||'택배 출고')}${e.courierShipments?.length?`<div class="hint">첫 송장 ${esc(e.courierShipments[0].tracking)}</div>`:''}${e.dateHistory?.length?`<div class="hint">최근 수정 ${esc(e.dateHistory.at(-1).from)} → ${esc(e.date)}</div>`:''}</td><td>${Number(e.count)||0}건</td><td><button type="button" class="btn-ghost" style="padding:8px 12px" data-courier-date="${esc(e.id)}" ${dateBusy?'disabled':''}>발송일 수정</button></td></tr>`).join('')}</tbody></table></div>`:'';
+  }
+  function openDateEditor(id) {
+    if(dateBusy) return;
+    const event=(state.events||[]).find(e=>e.id===id);
+    if(!event) return;
+    editingId=id;
+    $('courierDateDescription').textContent=`현재 ${event.date} · ${event.sourceFile||event.product||'택배 출고'} · 전체 ${Number(event.count)||0}건`;
+    $('courierNewDate').value=event.date;
+    $('courierDateEditor').hidden=false;
+    dateMessage('발송일을 선택하고 저장하세요. 검색된 송장이 일부여도 이 등록 묶음 전체가 변경됩니다.');
+    $('courierNewDate').focus();
+  }
+  async function saveDate() {
+    if(dateBusy||busy||!editingId) return;
+    const date=$('courierNewDate').value;
+    try {
+      if(!ready||!root.JinjuStockSync.ready()) throw Error('서버 자료를 먼저 불러와 주세요. 새로고침 후 다시 시도하세요.');
+      changeDate(state,editingId,date);
+      dateBusy=true;busy=true;$('courierDateSave').disabled=true;
+      await root.JinjuStockSync.commitCourierDate(editingId,date);
+      editingId=null;$('courierDateEditor').hidden=true;
+      $('courierFrom').value=date;$('courierTo').value=date;$('courierSearch').value='';
+      dateMessage(`${date} 발송일로 서버에 저장되었습니다. 송장·출고 수량과 택배비는 유지되며 날짜별 보관료가 재계산됩니다.`);
+    } catch(e) { dateMessage(e.message,true); }
+    finally {dateBusy=false;busy=false;$('courierDateSave').disabled=false;targets();renderAll();}
   }
   let xlsxPromise;
   function excelLibrary() {
@@ -173,7 +230,7 @@
     try {
       const stockLines=stockPlan.lines.map(l=>({productId:l.productId,quantity:l.quantity}));
       if(target){target.courierShipments=shipments;if(stockLines.length)target.stockLines=stockLines;}
-      else if(shipments.length) state.events.push({id:'courier-'+crypto.randomUUID(),type:'out',method:'courier',date,time:'',product:'택배 피킹리스트',qty:0,deductPlt:0,count:shipments.length,memo:'피킹리스트 송장별 정산',courierShipments:shipments,stockLines});
+      else if(shipments.length) state.events.push({id:'courier-'+crypto.randomUUID(),type:'out',method:'courier',date,time:'',product:'택배 피킹리스트',qty:0,deductPlt:0,count:shipments.length,memo:'피킹리스트 송장별 정산',courierShipments:shipments,stockLines,sourceFile:$('courierFile').files[0]?.name||'',importedAt:Date.now()});
       enrich(parts.duplicates,state.events);
       queueSave(); clearTimeout(saveTimer);
       draft=null; $('courierFile').value=''; $('courierFrom').value=shipments.length?date:''; $('courierTo').value=shipments.length?date:''; $('courierSearch').value='';
@@ -188,6 +245,10 @@
   const panel=document.createElement('section'); panel.id='tab-courier';panel.className='tab-panel hidden';
   panel.innerHTML=`<div class="card p-4 mb-6"><h2 class="text-lg font-bold">택배 피킹리스트 등록</h2><p class="hint">송장번호 1개를 택배 1건으로 계산합니다. 발송일을 직접 확인해주세요. 같은 송장은 중복 정산하지 않고 이름·간단 주소를 보완합니다.</p><div style="display:flex;gap:14px;flex-wrap:wrap;margin:16px 0"><label>발송일<br><input id="courierShipDate" type="date"></label><label>피킹리스트 파일<br><input id="courierFile" type="file" accept=".xlsx,.xls,.csv"></label></div><label style="display:block">등록 방식<br><select id="courierTarget" style="width:100%;margin:6px 0 12px"></select></label><div id="courierPreview" style="background:#f3f8f8;padding:14px;border-radius:10px"></div><button id="courierCommit" type="button" class="btn-primary" style="padding:10px 18px;margin-top:14px;border-radius:8px" disabled>제품 재고·정산 반영</button><p id="courierMessage" role="status" style="margin-top:12px"></p><p class="hint">신규 송장의 제품별 BOX를 차감합니다. 박스 수량은 피킹리스트 수량 열을 사용합니다. 보관 PLT와 보관료는 남은 BOX에서 자동 환산됩니다. 수취인 정보가 없는 기존 송장은 같은 파일을 다시 올려 정보만 보완할 수 있습니다. 주소는 도로명·번지까지만 간단히 표시합니다. 수동 정산은 기존 정산에 송장만 연결하세요.</p></div><div class="card p-4"><h2 class="text-lg font-bold">날짜별 택배 출고 · 송장 조회</h2><div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0"><label>조회 시작일<br><input id="courierFrom" type="date"></label><label>조회 종료일<br><input id="courierTo" type="date"></label><label>송장·받는 분 검색<br><input id="courierSearch" type="search" placeholder="송장번호, 이름, 간단 주소"></label><button type="button" id="courierAll" class="btn-ghost" style="padding:8px 14px">전체 기간</button></div><p class="hint">송장번호·이름·주소로 전체 발송 이력을 찾습니다. 하이픈과 공백은 무시합니다.</p><p id="courierSummary" style="font-weight:700;margin:14px 0"></p><div id="courierDaily"></div><div id="courierResults" style="overflow:auto;max-height:560px"></div></div>`;
   nav.parentElement.appendChild(panel);
+  $('courierResults').insertAdjacentHTML('beforebegin',`<div id="courierBatches"></div><div id="courierDateEditor" hidden style="margin:16px 0;padding:16px;background:#f3f8f8;border:1px solid #0D7377;border-radius:10px"><h3 style="font-weight:700">발송일 수정</h3><p id="courierDateDescription" style="margin:8px 0"></p><label>변경할 발송일 <input id="courierNewDate" type="date" required></label><div style="display:flex;gap:8px;margin-top:12px"><button id="courierDateSave" type="button" class="btn-primary" style="padding:10px 16px;border-radius:8px">변경 날짜 저장</button><button id="courierDateCancel" type="button" class="btn-ghost" style="padding:10px 16px;border-radius:8px">취소</button></div><p class="hint">기존 송장과 출고 수량은 유지됩니다. 재고 기준일을 넘기거나 과거 재고가 음수가 되는 변경은 저장하지 않습니다.</p></div><p id="courierDateMessage" role="status" style="margin:12px 0"></p>`);
+  $('courierBatches').onclick=e=>{const id=e.target.closest('[data-courier-date]')?.dataset.courierDate;if(id)openDateEditor(id);};
+  $('courierDateSave').onclick=saveDate;
+  $('courierDateCancel').onclick=()=>{if(dateBusy)return;editingId=null;$('courierDateEditor').hidden=true;dateMessage('');};
   const style=document.createElement('style');style.textContent='#tab-courier button:disabled{opacity:.45;cursor:not-allowed}#tab-courier input[type=file]{max-width:100%}';document.head.appendChild(style);
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date());
   $('courierShipDate').value=today;$('courierFrom').value=today.slice(0,8)+'01';$('courierTo').value=today;
