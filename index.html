@@ -52,7 +52,7 @@
   }
 </style>
 <script defer src="./stock-sync.js?v=20261109.1"></script>
-<script src="./pallet-stock-core.js?v=20261026.1"></script>
+<script src="./pallet-stock-core.js?v=20261109.2"></script>
 <script defer src="./product-stock-core.js?v=20261026.1"></script>
 <script defer src="./courier-import.js?v=20261109.1"></script>
 <script defer src="./stock-edit-core.js?v=20261026.2"></script>
@@ -116,6 +116,7 @@
       <div class="card p-4">
         <div class="text-xs text-[var(--ink-soft)] mb-1">누적 보관료 (오늘까지)</div>
         <div class="text-2xl font-extrabold tabular" id="statStorage">-</div>
+        <p id="storageWarning" class="text-xs text-amber-700 mt-1" role="status"></p>
       </div>
       <div class="card p-4">
         <div class="text-xs text-[var(--ink-soft)] mb-1">이번달 입고</div>
@@ -218,7 +219,7 @@
         <button onclick="setRange('lastMonth')" class="btn-ghost px-3 py-2 rounded-lg text-xs font-bold">지난달</button>
         <button onclick="setRange('all')" class="btn-ghost px-3 py-2 rounded-lg text-xs font-bold">전체기간</button>
         <button onclick="renderSettlement()" class="btn-primary px-4 py-2 rounded-lg text-xs font-bold ml-auto">정산서 계산</button>
-        <button onclick="window.print()" class="btn-ghost px-4 py-2 rounded-lg text-xs font-bold">인쇄 / PDF 저장</button>
+        <button id="printInvoice" onclick="window.print()" disabled class="btn-ghost px-4 py-2 rounded-lg text-xs font-bold">인쇄 / PDF 저장</button>
       </div>
     </div>
 
@@ -827,21 +828,27 @@ function calcStorage(fromDate, toDate){
 
 // ---------- Rendering ----------
 function renderAll(){
-  renderGauge();
-  renderDashboard();
+  let stock = null, stockError = '';
+  try { stock = currentStock(); }
+  catch(error) { stockError = error.message; }
+  renderGauge(stock, stockError);
+  renderDashboard(stock);
   renderEventsTable();
   renderCostsTable();
   renderSettingsForm();
-  document.getElementById('stockHeadline').textContent = currentStock() + ' PLT';
+  document.getElementById('stockHeadline').textContent = stock === null ? '확인 필요' : stock + ' PLT';
   updateInFeePreview();
   updateOutFeePreview();
   renderSettlement();
 }
 
-function renderGauge(){
-  const stock = currentStock();
+function renderGauge(stock, error){
   const gauge = document.getElementById('palletGauge');
   gauge.innerHTML = '';
+  if(stock === null){
+    document.getElementById('gaugeSubtext').textContent = error;
+    return;
+  }
   const showCount = Math.max(stock, 1);
   const cap = Math.min(showCount, 60);
   for(let i=0;i<cap;i++){
@@ -852,12 +859,17 @@ function renderGauge(){
   document.getElementById('gaugeSubtext').textContent = stock + ' PLT 보관중 · 1PLT = ' + won(state.settings.storageFee) + '/일';
 }
 
-function renderDashboard(){
-  const stock = currentStock();
-  document.getElementById('statStock').textContent = stock + ' PLT';
-
-  const storage = calcStorage(getFirstEventDate(), todayStr());
-  document.getElementById('statStorage').textContent = won(storage.total);
+function renderDashboard(stock){
+  document.getElementById('statStock').textContent = stock === null ? '확인 필요' : stock + ' PLT';
+  const storageWarning = document.getElementById('storageWarning');
+  try {
+    const storage = calcStorage(getFirstEventDate(), todayStr());
+    document.getElementById('statStorage').textContent = won(storage.total);
+    storageWarning.textContent = '';
+  } catch(error) {
+    document.getElementById('statStorage').textContent = '확인 필요';
+    storageWarning.textContent = error.message;
+  }
 
   const now = new Date(todayStr()+'T12:00:00');
   const ym = fmtLocalDate(now).slice(0,7);
@@ -938,6 +950,24 @@ function renderSettlement(){
   const to = requestedTo > todayStr() ? todayStr() : requestedTo;
   document.getElementById('settleTo').value = to;
   document.getElementById('settleTo').max = todayStr();
+  document.getElementById('invoicePeriod').textContent = `기간: ${from} ~ ${to}`;
+  const printButton = document.getElementById('printInvoice');
+  printButton.disabled = true;
+  let storage;
+  try {
+    storage = calcStorage(from, to);
+  } catch(error) {
+    const message = document.createElement('td');
+    message.colSpan = 3;
+    message.textContent = '정산 확인 필요 · ' + error.message;
+    const row = document.createElement('tr');
+    row.appendChild(message);
+    document.getElementById('invoiceBody').replaceChildren(row);
+    for(const id of ['invoiceSubtotal', 'invoiceVat', 'invoiceTotal']){
+      document.getElementById(id).textContent = '—';
+    }
+    return;
+  }
 
   const inRange = state.events.filter(e => e.type==='in' && e.date>=from && e.date<=to);
   const outRange = state.events.filter(e => e.type==='out' && e.date>=from && e.date<=to);
@@ -970,8 +1000,6 @@ function renderSettlement(){
     }
   });
 
-  const storage = calcStorage(from, to);
-
   const costsInRange = state.costs.filter(c => c.date>=from && c.date<=to);
   const costsTotal = costsInRange.reduce((s,c)=>s+c.amount,0);
 
@@ -982,7 +1010,6 @@ function renderSettlement(){
   const vat = subtotal * state.settings.vatRate;
   const total = subtotal + vat;
 
-  document.getElementById('invoicePeriod').textContent = `기간: ${from} ~ ${to}`;
   const sup = state.settings.supplier;
   document.getElementById('supplierBlock').innerHTML = `
     <div class="font-bold text-[var(--ink)]">${sup.name}</div>
@@ -1037,6 +1064,7 @@ function renderSettlement(){
   document.getElementById('invoiceSubtotal').textContent = won(subtotal);
   document.getElementById('invoiceVat').textContent = won(vat);
   document.getElementById('invoiceTotal').textContent = won(total);
+  printButton.disabled = false;
 }
 
 // ---------- Init ----------
@@ -1048,6 +1076,6 @@ window.addEventListener('DOMContentLoaded', () => {
   loadData();
 });
 </script>
-<script defer src="./pallet-stock-ui.js?v=20261026.1"></script>
+<script defer src="./pallet-stock-ui.js?v=20261109.2"></script>
 </body>
 </html>

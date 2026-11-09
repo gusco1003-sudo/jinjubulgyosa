@@ -36,9 +36,14 @@
   for(let day=start;day<=to;day=next(day)){
    ledger=Math.max(0,ledger+(ins[day]||0));const legacy=ledger;ledger=Math.max(0,ledger+(outs[day]||0));
    if(hasProducts&&day>=inv.deductionStartDate)for(const [id,q] of Object.entries(changes[day]||{}))balances[id]+=q;
-   let qty=legacy,basis='ledger';current=ledger;
-   if(hasProducts&&day>=inv.deductionStartDate){const r=equivalent(products,balances);qty=r.pallets;current=r.pallets;finalEquivalent=r.equivalent;basis='boxes';}
    if(day<from)continue;
+   let qty=legacy,basis='ledger';current=ledger;
+   if(hasProducts&&day>=inv.deductionStartDate){
+    let r;
+    try{r=equivalent(products,balances);}
+    catch(error){throw Error(day+' · '+error.message);}
+    qty=r.pallets;current=r.pallets;finalEquivalent=r.equivalent;basis='boxes';
+   }
    const row={date:day,qty,legacy,rate,amount:qty*rate,basis};days.push(row);
    const last=segments[segments.length-1];
    if(last&&last.balance===qty&&last.basis===basis){last.end=day;last.days++;last.fee+=row.amount;}

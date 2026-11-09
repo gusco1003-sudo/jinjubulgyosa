@@ -8,16 +8,27 @@
  nav.parentElement.appendChild(panel);$('palletMonth').value=todayStr().slice(0,7);$('palletMonth').max=todayStr().slice(0,7);
  function render(){
   if(!state.productStock)return;
+  const now=todayStr(),month=$('palletMonth').value||now.slice(0,7);
   try{
-   const now=todayStr(),current=JinjuPalletCore.calculate(state,now,now,now),month=$('palletMonth').value||now.slice(0,7);
-   const end=new Date(Date.UTC(+month.slice(0,4),+month.slice(5,7),0)).toISOString().slice(0,10),r=JinjuPalletCore.calculate(state,month+'-01',end,now),old=r.days.reduce((n,d)=>n+d.legacy*d.rate,0);
+   const current=JinjuPalletCore.calculate(state,now,now,now);
    $('palletRule').textContent=`${current.effectiveDate}부터 제품 이력으로 재계산 · 이전 날짜는 기존 원장 유지 · 등록된 박스 적재 기준을 사용한 혼적 환산 수량`;
    $('palletSummary').innerHTML=`<div>현재 보관<strong>${current.current} PLT</strong></div><div>품목별 환산 합계<strong>${current.equivalent.toFixed(3)} PLT</strong></div><div>현재 잔량 기준 1일 보관료<strong>${won(current.current*state.settings.storageFee)}</strong></div>`;
    $('palletProducts').innerHTML=current.products.map(p=>`<tr><td>${esc(p.name)}</td><td>${p.balance}</td><td>${p.boxesPerPallet||'—'}</td><td>${p.balance?(p.balance/p.boxesPerPallet).toFixed(3):'0.000'}</td></tr>`).join('');
+  }catch(e){
+   $('palletRule').textContent=e.message;
+   $('palletSummary').textContent='현재 재고 확인 필요';
+   $('palletProducts').replaceChildren();
+  }
+  try{
+   const end=new Date(Date.UTC(+month.slice(0,4),+month.slice(5,7),0)).toISOString().slice(0,10),r=JinjuPalletCore.calculate(state,month+'-01',end,now),old=r.days.reduce((n,d)=>n+d.legacy*d.rate,0);
    $('palletMonthSummary').textContent=`${month} 오늘까지 · 기존 ${won(old)} → 재계산 ${won(r.total)} · 차액 ${won(r.total-old)} (부가세 별도)`;
    $('palletDays').innerHTML=r.days.map(d=>`<tr><td>${d.date}</td><td>${d.legacy}</td><td>${d.qty}${d.basis==='ledger'?' (원장)':''}</td><td>${won(d.amount)}</td><td>${won(d.amount-d.legacy*d.rate)}</td></tr>`).join('')||'<tr><td colspan="5">조회할 보관 기록이 없습니다.</td></tr>';
    $('palletError').textContent='';
-  }catch(e){$('palletError').textContent=e.message;}
+  }catch(e){
+   $('palletMonthSummary').textContent='선택한 월의 보관료 확인 필요';
+   $('palletDays').replaceChildren();
+   $('palletError').textContent=e.message;
+  }
  }
  $('palletMonth').onchange=render;const base=renderAll;renderAll=function(){base();render();};render();
  };
