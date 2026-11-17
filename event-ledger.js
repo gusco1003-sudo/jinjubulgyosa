@@ -60,9 +60,16 @@
  let allowed=false,busy=false,active=null;
  const ready=()=>allowed&&!busy&&window.JinjuStockSync.ready();
  const btn=(label,attr,disabled=false)=>'<button type="button" class="btn-ghost px-3 py-2 text-xs font-bold" '+attr+(disabled?' disabled':'')+'>'+label+'</button>';
+ const hosted=typeof portalBridge!=='undefined';
+ const requested=hosted?new URLSearchParams(location.search):null;
+ let dispatched=false;
+ function handleRequested(){if(dispatched||!ready()||!requested?.has('ledgerAction'))return;dispatched=true;switchTab('events');const action=requested.get('ledgerAction');if(['edit','remove'].includes(action))open(action,requested.get('ledgerId'));}
+ const jump=(action,id,label)=>'<a class="btn-ghost px-3 py-2 text-xs font-bold" href="https://ts3pl-wms.onrender.com/admin?ledgerAction='+action+'&amp;ledgerId='+encodeURIComponent(id)+'">'+label+'</a>';
+ function actions(id){return hosted?btn('수정','data-event-edit="'+esc(id)+'"',!ready())+' '+btn('삭제','data-event-remove="'+esc(id)+'"',!ready()):jump('edit',id,'수정')+' '+jump('remove',id,'삭제');}
+ const recent=$('recentEventsBody');recent.closest('table').querySelector('thead tr').insertAdjacentHTML('beforeend','<th class="no-print">관리</th>');
  function paint(){access.hidden=allowed;archive.innerHTML='<summary>삭제한 입출고 내역 · 복원</summary>'+list(state.productStock?.deletedHistory).filter(a=>a.type==='event').map(a=>'<p>'+esc(a.date)+' · '+esc(a.label)+' '+btn('복원','data-restore="'+esc(a.id)+'"',!ready())+'</p>').join('');if(!archive.querySelector('p'))archive.insertAdjacentHTML('beforeend','<p>삭제한 입출고 내역이 없습니다.</p>');}
- const prevTable=renderEventsTable;renderEventsTable=function(){prevTable();paint();};
- eventRowHtml=function(e,manage){return '<tr><td><span class="'+(e.type==='in'?'badge-in':'badge-out')+'">'+(e.type==='in'?'입고':'출고')+'</span></td><td>'+esc(e.date)+' '+esc(e.time)+'</td><td>'+esc(e.product)+'</td><td>'+esc(eventTypeLabel(e))+'</td><td>'+esc(eventQtyLabel(e))+'</td><td>'+esc(won(eventFee(e)))+'</td><td>'+esc(e.memo)+'</td>'+(manage?'<td class="no-print">'+btn('수정','data-event-edit="'+esc(e.id)+'"',!ready())+' '+btn('삭제','data-event-remove="'+esc(e.id)+'"',!ready())+'</td>':'')+'</tr>';};
+ const prevTable=renderEventsTable;renderEventsTable=function(){prevTable();paint();handleRequested();};
+ eventRowHtml=function(e,manage){return '<tr><td><span class="'+(e.type==='in'?'badge-in':'badge-out')+'">'+(e.type==='in'?'입고':'출고')+'</span></td><td>'+esc(e.date)+' '+esc(e.time)+'</td><td>'+esc(e.product)+'</td><td>'+esc(eventTypeLabel(e))+'</td><td>'+esc(eventQtyLabel(e))+'</td><td>'+esc(won(eventFee(e)))+'</td><td>'+esc(e.memo)+'</td>'+'<td class="no-print">'+actions(e.id)+'</td>'+'</tr>';};
  function close(){box.hidden=true;box.replaceChildren();active=null;}
  const field=(name,label,value,type='text',extra='')=>'<label>'+label+' <input name="'+name+'" type="'+type+'" value="'+esc(value)+'" '+extra+'></label>';
  const opts=(arr,val)=>arr.map(([k,n])=>'<option value="'+esc(k)+'" '+(k===val?'selected':'')+'>'+esc(n)+'</option>').join('');
@@ -84,7 +91,7 @@
    html+='<p>이 등록 건 전체의 재고 차감·송장 조회·작업비가 함께 '+(action==='remove'?'취소':'복원')+'됩니다. 별도 등록한 제품 입고·기타비용은 유지됩니다.</p>';}
   box.innerHTML=html+'<p data-error role="status"></p>'+btn(action==='edit'?'수정 저장':action==='remove'?'삭제 저장':'복원 저장','data-apply')+' '+btn('취소','data-cancel');box.scrollIntoView({block:'center'});
  }catch(err){info.textContent=err.message;}}
- body.addEventListener('click',e=>{const b=e.target.closest('button');if(b?.hasAttribute('data-event-edit'))open('edit',b.dataset.eventEdit);if(b?.hasAttribute('data-event-remove'))open('remove',b.dataset.eventRemove);});
+ for(const table of [recent,body])table.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const edit=b.hasAttribute('data-event-edit');if(!edit&&!b.hasAttribute('data-event-remove'))return;switchTab('events');open(edit?'edit':'remove',edit?b.dataset.eventEdit:b.dataset.eventRemove);});
  archive.onclick=e=>{const b=e.target.closest('[data-restore]');if(b)open('restore',b.dataset.restore);};
  box.onclick=async e=>{const b=e.target.closest('button');if(!b||busy)return;if(b.hasAttribute('data-cancel'))return close();if(b.hasAttribute('data-add'))return $('eventEditLines').insertAdjacentHTML('beforeend',line());if(b.hasAttribute('data-drop'))return b.closest('[data-line]').remove();if(!b.hasAttribute('data-apply')||!ready()||!active)return;
   try{if(JSON.stringify(state)!==active.version)throw Error('자료가 바뀌었습니다. 취소한 뒤 최신 내역을 다시 열어 주세요.');
@@ -92,5 +99,5 @@
    if(action==='edit'){const p=Object.fromEntries([...box.querySelectorAll('[name]')].map(el=>[el.name,el.value]));p.lines=[...box.querySelectorAll('[data-line]')].map(r=>({productId:r.querySelector('select').value,quantity:r.querySelector('input').value}));next=edit(state,id,p);}else next=action==='remove'?remove(state,id,crypto.randomUUID()):restore(state,id);
    busy=true;b.disabled=true;await window.JinjuStockSync.commit(next);close();info.textContent=({edit:'수정',remove:'삭제',restore:'복원'}[action])+'한 입출고 내역을 저장했습니다.';
   }catch(err){box.querySelector('[data-error]').textContent=err.message;}finally{busy=false;b.disabled=false;renderAll();}};
- renderEventsTable();if(typeof portalBridge!=='undefined')portalBridge.session.then(s=>{allowed=s.key==='jinjubulgyosa'&&s.writable===true;renderEventsTable();}).catch(()=>{});
+ renderDashboardCurrentRows();renderEventsTable();function renderDashboardCurrentRows(){const events=list(state.events).slice().sort((a,b)=>(b.date+(b.time||'')).localeCompare(a.date+(a.time||''))).slice(0,8);if(events.length)recent.innerHTML=events.map(e=>eventRowHtml(e,false)).join('');}if(typeof portalBridge!=='undefined')portalBridge.session.then(s=>{allowed=s.key==='jinjubulgyosa'&&s.writable===true;renderDashboardCurrentRows();renderEventsTable();}).catch(()=>{});
 })(typeof window==='object'?window:globalThis);
