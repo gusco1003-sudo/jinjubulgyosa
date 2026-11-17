@@ -539,7 +539,7 @@ function eventRowHtml(e, withDelete){
       <td class="tabular">${eventQtyLabel(e)}</td>
       <td class="tabular">${won(eventFee(e))}</td>
       <td>${e.memo||''}</td>
-      ${withDelete ? `<td class="no-print"><button onclick="deleteEvent('${e.id}')" class="text-[var(--danger)] text-xs font-bold">삭제</button></td>` : ''}
+      ${withDelete ? '<td class="no-print">—</td>' : ''}
     </tr>`;
 }
 
@@ -1077,5 +1077,6 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <script defer src="./pallet-stock-ui.js?v=20261109.2"></script>
+<script defer src="./event-ledger.js?v=20261117.1"></script>
 </body>
 </html>
