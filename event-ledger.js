@@ -37,6 +37,7 @@
    }
    if(e.method==='box')e.count=linked.length?e.stockLines.reduce((a,l)=>a+l.quantity,0):number(patch.count,'출고 BOX');
    if(e.method==='courier'&&!shipments.length&&!linked.length)e.count=number(patch.count,'택배 건수');
+   if(e.method==='courier'&&!shipments.length&&patch.jejuCount!==undefined){e.jejuCount=number(patch.jejuCount,'제주 건수',0);if(e.jejuCount>e.count)throw Error('제주 건수는 전체 택배 건수 이하여야 합니다.');}
   }
   if(JSON.stringify(old)===JSON.stringify(e))throw Error('변경된 내용이 없습니다.');
   checkStock(data,next);return next;
@@ -85,6 +86,7 @@
    if(e.method==='box')html+=field('boxRate','박스당 단가',boxRate(e),'number','min="0"');
    if(e.method==='courier'&&(list(e.courierShipments).length||lines.length))html+='<span>피킹 등록 '+esc(e.count)+'건 · 송장과 연결된 건수·품목은 유지됩니다.</span>';
    else if(['box','courier'].includes(e.method)&&!lines.length)html+=field('count',e.method==='box'?'BOX':'택배 건수',e.count,'number','min="1"');
+   if(e.method==='courier'&&!list(e.courierShipments).length)html+=field('jejuCount','제주 건수 (전체에 포함)',e.jejuCount??0,'number','min="0" step="1"');
    html+='</div>';if(lines.length&&e.method!=='courier')html+='<div id="eventEditLines">'+lines.map(line).join('')+'</div>'+btn('품목 추가','data-add');
   }else{html+='<p>'+esc(eventQtyLabel(e))+' · 작업비 '+esc(won(eventFee(e)))+' · '+esc(e.memo)+'</p>';
    const details=list(e.stockLines).map(l=>(list(state.productStock?.products).find(p=>p.id===l.productId)?.name||l.productId)+' '+l.quantity+' BOX').join(', ');if(details)html+='<p>연결 제품: '+esc(details)+'</p>';

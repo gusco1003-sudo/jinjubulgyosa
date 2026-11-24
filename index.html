@@ -52,9 +52,10 @@
   }
 </style>
 <script defer src="./stock-sync.js?v=20261109.1"></script>
+<script src="./courier-fees.js?v=20261124.1"></script>
 <script src="./pallet-stock-core.js?v=20261109.2"></script>
 <script defer src="./product-stock-core.js?v=20261026.1"></script>
-<script defer src="./courier-import.js?v=20261109.1"></script>
+<script defer src="./courier-import.js?v=20261124.1"></script>
 <script defer src="./stock-edit-core.js?v=20261026.2"></script>
 <script defer src="./product-stock-ui.js?v=20261026.2"></script>
 <script defer src="./manual-out-stock.js?v=20261026.1"></script>
@@ -180,7 +181,7 @@
             <label class="text-xs text-[var(--ink-soft)] block">PLT 수량<input type="number" min="0.1" step="0.1" id="outQty" class="w-full mt-1" oninput="updateOutFeePreview()"></label>
           </div>
           <div id="outCourierWrap" class="col-span-2 hidden grid grid-cols-2 gap-2">
-            <label class="text-xs text-[var(--ink-soft)]">택배 건수<input type="number" min="1" id="outCourierCount" class="w-full mt-1" oninput="updateOutFeePreview()"></label>
+            <label class="text-xs text-[var(--ink-soft)]">제주 건수 (전체 건수에 포함)<input type="number" min="0" step="1" id="outJejuCount" value="0" class="w-full mt-1" oninput="updateOutFeePreview()"></label><label class="text-xs text-[var(--ink-soft)]">택배 건수<input type="number" min="1" id="outCourierCount" class="w-full mt-1" oninput="updateOutFeePreview()"></label>
             <label class="text-xs text-[var(--ink-soft)]">차감 PLT (선택)<input type="number" min="0" step="0.1" id="outDeductPlt" placeholder="0" class="w-full mt-1"></label>
           </div>
           <div id="outBoxWrap" class="col-span-2 hidden grid grid-cols-2 gap-2">
@@ -500,7 +501,7 @@ function eventFee(e){
   }
   if(e.method === 'box') return (e.count || 0) * boxRate(e);
   if(e.method === 'courier'){
-    return (e.count||0) * (state.settings.outboundFee.courier||0);
+    return JinjuCourierFees.event(e,state.settings.outboundFee.courier||0).total;
   }
   return (e.qty||0) * (state.settings.outboundFee[e.method]||0);
 }
@@ -580,7 +581,10 @@ function updateOutFeePreview(){
   } else if(method === 'courier'){
     const count = parseInt(document.getElementById('outCourierCount').value) || 0;
     const rate = state.settings.outboundFee.courier || 0;
-    el.textContent = `예상 택배비: ${count}건 × ${won(rate)} = ${won(count*rate)}`;
+    const jejuCount=Number(document.getElementById('outJejuCount').value);
+    if(!Number.isSafeInteger(jejuCount)||jejuCount<0||jejuCount>count){el.textContent='제주 건수는 전체 택배 건수 이하의 정수로 입력하세요.';return;}
+    const f=JinjuCourierFees.event({count,jejuCount},rate);
+    el.textContent = `예상 택배비: 기본 ${count}건 × ${won(rate)} + 제주 ${f.jeju}건 × 3,000원 = ${won(f.total)}`;
   } else {
     const qty = Number(document.getElementById('outQty').value) || 0;
     const rate = state.settings.outboundFee[method] || 0;
@@ -642,6 +646,9 @@ function addEvent(type){
     } else if(method === 'courier'){
       const count = parseInt(document.getElementById('outCourierCount').value);
       const deductPlt = parseFloat(document.getElementById('outDeductPlt').value) || 0;
+      const jejuCount=Number(document.getElementById('outJejuCount').value);
+      if(!Number.isSafeInteger(jejuCount)||jejuCount<0||jejuCount>count){alert('제주 건수는 전체 택배 건수 이하의 정수로 입력하세요.');return;}
+      ev.jejuCount=jejuCount;
       if(!count || count <= 0){
         alert('택배 건수를 올바르게 입력해주세요.');
         return;
@@ -662,7 +669,7 @@ function addEvent(type){
       if(!window.JinjuManualStock.prepare(ev))return;
     }
     state.events.push(ev);
-    ['outBoxCount','outBoxDeductPlt','outCourierCount','outDeductPlt','outQty'].forEach(id=>document.getElementById(id).value='');
+    ['outBoxCount','outBoxDeductPlt','outCourierCount','outJejuCount','outDeductPlt','outQty'].forEach(id=>document.getElementById(id).value='');
     if(['box','korean','general'].includes(method))window.JinjuManualStock.clear();
     document.getElementById('outMemo').value = '';
   }
@@ -1036,7 +1043,13 @@ function renderSettlement(){
   });
   if(outGroups.korean.qty > 0) logisticsRows += rowHtml('출고비 (한국파렛트)', `${outGroups.korean.qty} PLT × ${won(state.settings.outboundFee.korean)}`, outGroups.korean.total);
   if(outGroups.general.qty > 0) logisticsRows += rowHtml('출고비 (일반파렛트)', `${outGroups.general.qty} PLT × ${won(state.settings.outboundFee.general)}`, outGroups.general.total);
-  if(outGroups.courier.count > 0) logisticsRows += rowHtml('택배비', `${outGroups.courier.count}건 × ${won(state.settings.outboundFee.courier)}`, outGroups.courier.total);
+  if(outGroups.courier.count > 0){
+    const cf=outRange.filter(e=>e.method==='courier').map(e=>JinjuCourierFees.event(e,state.settings.outboundFee.courier));
+    const jeju=cf.reduce((n,f)=>n+f.jeju,0),unknown=cf.reduce((n,f)=>n+f.unknown,0);
+    logisticsRows += rowHtml('택배 기본요금', `${outGroups.courier.count}건 × ${won(state.settings.outboundFee.courier)}`, outGroups.courier.total-jeju*3000);
+    if(jeju)logisticsRows += rowHtml('제주 추가요금', `${jeju}건 × 3,000원`,jeju*3000);
+    if(unknown)logisticsRows += rowHtml('배송지 확인 필요', `${unknown}건 · 주소 미등록으로 제주 추가요금 미확정`,0);
+  }
   Array.from(boxGroups.entries()).sort((a,b)=>a[0]-b[0]).forEach(([rate,g])=>{
     logisticsRows += rowHtml('상자 출고비', `${g.count}박스 × ${won(rate)}`, g.total);
   });
@@ -1077,6 +1090,6 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <script defer src="./pallet-stock-ui.js?v=20261109.2"></script>
-<script defer src="./event-ledger.js?v=20261117.2"></script>
+<script defer src="./event-ledger.js?v=20261124.1"></script>
 </body>
 </html>
